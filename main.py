@@ -38,42 +38,136 @@ import pandas as pd
 from sklearn.model_selection import train_test_split, KFold, cross_validate
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
+from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.metrics import f1_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 import spacy
-
+import re
+import numpy as np
+from scipy.sparse import hstack
 # Load the Rest_Mex_2022 corpus (replace 'your_data.csv' with the actual file name)
-corpus = pd.read_excel('Recursos/Rest_Mex_2022.xlsx')
+
 
 # Apply normalization process (example: lowercase and remove punctuation)
-corpus['Opinion'].fillna('', inplace=True)
-corpus['Opinion'] = corpus['Opinion'].str.lower()
-corpus['Opinion'] = corpus['Opinion'].str.replace('[^\w\s]', '')
-#lematizar
-nlp = spacy.load("es_core_news_sm")
-corpus['Opinion'] = corpus['Opinion'].apply(lambda x: " ".join([token.lemma_ for token in nlp(x)]))
-#quitar stopwords
-stop_words = [
-"el", "la", "los", "las", "un", "una", "unos", "unas", "al", "del", "lo", "este", "ese", "aquel", "estos", "esos", "aquellos", "este", "esta", "estas", "eso", "esa", "esas", "aquello", "alguno", "alguna", "algunos", "algunas",
-"a", "ante", "bajo", "cabe", "con", "contra", "de", "desde", "en", "entre", "hacia", "hasta", "para", "por", "según", "sin", "so", "sobre", "tras", "durante", "mediante", "excepto", "a través de", "conforme a", "encima de", "debajo de", "frente a", "dentro de",
-"y", "o", "pero", "ni", "que", "si", "como", "porque", "aunque", "mientras", "siempre que", "ya que", "pues", "a pesar de que", "además", "sin embargo", "así que", "por lo tanto", "por lo que", "tan pronto como", "a medida que", "tanto como", "no solo... sino también", "o bien", "bien... bien",
-"yo", "tú", "él", "ella", "nosotros", "vosotros", "ellos", "ellas", "usted", "nosotras", "me", "te", "le", "nos", "os", "les", "se", "mí", "ti", "sí", "conmigo", "contigo", "consigo", "mi", "tu", "su", "nuestro", "vuestro", "sus", "mío", "tuyo", "suyo", "nuestro", "vuestro", "suyo"]
-corpus['Opinion'] = corpus['Opinion'].apply(lambda x: " ".join([word for word in x.split() if word not in (stop_words)]))
 
+
+import pandas as pd
+
+
+
+
+def load_sel():
+	#~ global lexicon_sel
+	lexicon_sel = {}
+	input_file = open('Recursos\SEL_full.txt', 'r')
+	for line in input_file:
+		#Las líneas del lexicon tienen el siguiente formato:
+		#abundancia	0	0	50	50	0.83	Alegría
+		
+		palabras = line.split("\t")
+		palabras[6]= re.sub('\n', '', palabras[6])
+		pair = (palabras[6], palabras[5])
+		if lexicon_sel:
+			if palabras[0] not in lexicon_sel:
+				lista = [pair]
+				lexicon_sel[palabras[0]] = lista
+			else:
+				lexicon_sel[palabras[0]].append (pair)
+		else:
+			lista = [pair]
+			lexicon_sel[palabras[0]] = lista
+	input_file.close()
+	del lexicon_sel['Palabra']; #Esta llave se inserta porque es parte del encabezado del diccionario, por lo que se requiere eliminar
+	#Estructura resultante
+		#'hastiar': [('Enojo\n', '0.629'), ('Repulsi\xf3n\n', '0.596')]
+	return lexicon_sel
+
+def getSELFeatures(cadenas, lexicon_sel):
+	#'hastiar': [('Enojo\n', '0.629'), ('Repulsi\xf3n\n', '0.596')]
+	features = []
+	for cadena in cadenas:
+		valor_alegria = 0.0
+		valor_enojo = 0.0
+		valor_miedo = 0.0
+		valor_repulsion = 0.0
+		valor_sorpresa = 0.0
+		valor_tristeza = 0.0
+		cadena_palabras = re.split('\s+', cadena)
+		dic = {}
+		for palabra in cadena_palabras:
+			if palabra in lexicon_sel:
+				caracteristicas = lexicon_sel[palabra]
+				for emocion, valor in caracteristicas:
+					if emocion == 'Alegría':
+						valor_alegria = valor_alegria + float(valor)
+					elif emocion == 'Tristeza':
+						valor_tristeza = valor_tristeza + float(valor)
+					elif emocion == 'Enojo':
+						valor_enojo = valor_enojo + float(valor)
+					elif emocion == 'Repulsión':
+						valor_repulsion = valor_repulsion + float(valor)
+					elif emocion == 'Miedo':
+						valor_miedo = valor_miedo + float(valor)
+					elif emocion == 'Sorpresa':
+						valor_sorpresa = valor_sorpresa + float(valor)
+		dic['__alegria__'] = valor_alegria
+		dic['__tristeza__'] = valor_tristeza
+		dic['__enojo__'] = valor_enojo
+		dic['__repulsion__'] = valor_repulsion
+		dic['__miedo__'] = valor_miedo
+		dic['__sorpresa__'] = valor_sorpresa
+		
+		#Esto es para los valores acumulados del mapeo a positivo (alegría + sorpresa) y negativo (enojo + miedo + repulsión + tristeza)
+		dic['acumuladopositivo'] = dic['__alegria__'] + dic['__sorpresa__']
+		dic['acumuladonegative'] = dic['__enojo__'] + dic['__miedo__'] + dic['__repulsion__'] + dic['__tristeza__']
+		
+		features.append (dic)
+	
+	
+	return features
+
+
+
+# Lee el archivo Excel
+corpus = pd.read_excel('Rest_Mex_2022.xlsx')
 
 
 # Create training set and test set
 X_train, X_test, y_train, y_test = train_test_split(
     corpus['Opinion'], corpus['Polarity'], test_size=0.2, random_state=0
 )
+print("Iniciar lexicon")
+
+#Polariadad con lexicon
+#Load lexicons
+lexicon_sel = load_sel()
+polarity_train = getSELFeatures(X_train, lexicon_sel)
+polarity_test = getSELFeatures(X_test, lexicon_sel)
+	
+
 
 # Create different text representations of the corpus (example: TF-IDF)
 tfidf_vectorizer = TfidfVectorizer()
 X_train_tfidf = tfidf_vectorizer.fit_transform(X_train)
 X_test_tfidf = tfidf_vectorizer.transform(X_test)
+
+
+# Construir vectores de polaridad para entrenamiento
+polarity_train_vectors = np.array([[p['acumuladopositivo'], p['acumuladonegative']] for p in polarity_train])
+# Concatenar vectores de polaridad con la representación TF-IDF
+X_train_combined = hstack([X_train_tfidf, polarity_train_vectors]).toarray()
+
+# Construir vectores de polaridad para prueba
+polarity_test_vectors = np.array([[p['acumuladopositivo'], p['acumuladonegative']] for p in polarity_test])
+# Concatenar vectores de polaridad con la representación TF-IDF
+X_test_combined = hstack([X_test_tfidf, polarity_test_vectors]).toarray()
+# Ahora, X_train_combined y X_test_combined contienen tanto la representación TF-IDF como la información de polaridad.
+
+X_train_tfidf = X_train_combined
+X_test_tfidf = X_test_combined
 
 # Split the training set into 5 folds
 kf = KFold(n_splits=5, shuffle=True, random_state=0)
@@ -81,8 +175,7 @@ kf = KFold(n_splits=5, shuffle=True, random_state=0)
 # Define models
 models = [
     MultinomialNB(),
-    RandomForestClassifier(),
-    SVC()
+    LogisticRegression(max_iter=10000),
 ]
 
 # Train different Machine Learning models and calculate average f1 macro
@@ -90,6 +183,7 @@ best_model = None
 best_f1_macro = 0
 
 for model in models:
+    print("jheje")
     pipeline = make_pipeline(StandardScaler(with_mean=False), model)  # Example pipeline with StandardScaler
     scores = cross_validate(pipeline, X_train_tfidf, y_train, cv=kf, scoring='f1_macro', return_train_score=False)
     avg_f1_macro = scores['test_score'].mean()
@@ -114,3 +208,41 @@ avg_f1_macro_test = f1_score(y_test, predictions, average='macro')
 print(f'\nAverage F1 Macro on Test Set: {avg_f1_macro_test}')
 
 
+
+
+
+"""
+
+
+
+
+
+polaridadCadenas = []
+#aqui se debe agregar la representación de polaridad
+for i in range(len(X_train)):
+	polaridadPos = np.array([polarity_train[i]['acumuladopositivo']])  # Wrap it in a list to add a dimension
+	polaridadNeg = np.array([polarity_train[i]['acumuladonegative']])  # Wrap it in a list to add a dimension
+
+	# Asegúrate de que los arrays tengan al menos una dimensión
+	polaridadPos = polaridadPos.reshape(-1, 1)
+	polaridadNeg = polaridadNeg.reshape(-1, 1)
+	polaridadCadena = np.concatenate((polaridadPos, polaridadNeg), axis=0)
+	polaridadCadenas.append(polaridadCadena)
+
+polaridadCadenas = np.array(polaridadCadenas)
+aewa = hstack([X_train_tfidf, polaridadCadenas]).toarray()
+
+
+polaridadCadenas = []
+for i in range(len(X_test)):
+	polaridadPos = np.array(polarity_test[i]['acumuladopositivo'])
+	polaridadNeg = np.array(polarity_test[i]['acumuladonegative'])
+	polaridadCadena =  np.concatenate((polaridadPos, polaridadNeg), axis=0)
+	polaridadCadenas.append(polaridadCadena)
+
+polaridadCadenas = np.array(polaridadCadenas)
+X_test_tfidf = hstack([X_test,polaridadCadenas]).toarray()
+
+
+
+"""

@@ -91,6 +91,7 @@ if __name__=='__main__':
 		lexicon_sel_file.close()
 	
 	#~ print (lexicon_sel)
+
 	cadena1 = 'el mejor vista de guanajuato_es uno mirador precioso y con el mejor vista de el ciudad de guanajuato . el monumento ser impresionante . frente_a el monumento ( por el parte de atrás de el pípila ) haber uno serie de local en donde vender artesanía ... si te gustar algo de ahí , comprar . a mí me pasar que ver algo y no el comprar pensar que el ver más tarde en otro lado y no ser así . te recomer que llegar hasta ahí en taxi , ser muy económico , porque como estar en uno lugar muy alto , ser muy cansar llegar caminar , aunque no estar lejos_de el centro . peroooo ... bajar caminar por el mini callejón . ¡ ser algo precioso ! te llevar directamente por uno lado de el teatro_juárez . '
 	cadena2 = '¡ malo ! no gastar tu dinero ahí malo condición , deplorable . definitivamente no gastar tu dinero ahí , mejor ver a gastar en dulce en el tienda de la catrina .'
 	cadenas = []
