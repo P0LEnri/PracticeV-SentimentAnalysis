@@ -38,6 +38,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split, KFold, cross_validate
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
+from sklearn.neural_network import MLPClassifier
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
@@ -129,11 +130,32 @@ def getSELFeatures(cadenas, lexicon_sel):
 	
 	return features
 
+#emojis
+
+def load_emoji_sentiments(file_path):
+    # Lee el archivo Excel
+    df = pd.read_excel(file_path)
+
+    # Inicializa el diccionario
+    emoji_sentiments = {}
+
+    # Itera sobre las filas del DataFrame
+    for index, row in df.iterrows():
+        # Extrae la información relevante de la fila
+        emoji = row['emoji']
+        negative = row['negative']
+        positive = row['positive']
+
+        # Crea la entrada en el diccionario
+        emoji_sentiments[emoji] = {'negative': negative, 'positive': positive}
+
+    return emoji_sentiments
+
+
 
 
 # Lee el archivo Excel
 corpus = pd.read_excel('Rest_Mex_2022.xlsx')
-
 
 # Create training set and test set
 X_train, X_test, y_train, y_test = train_test_split(
@@ -141,20 +163,54 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 print("Iniciar lexicon")
 
+# Create different text representations of the corpus (example: TF-IDF)
+
+tfidf_vectorizer = CountVectorizer(binary=True)
+#tfidf_vectorizer = TfidfVectorizer()
+
+
+#EMOJIS
+
+# Ruta al archivo Excel
+xlsx_file_path = 'Recursos/Emojis lexicon.xlsx'
+
+# Llama a la función para cargar el diccionario
+emoji_sentiments_dict = load_emoji_sentiments(xlsx_file_path)
+
+# Imprime el diccionario resultante
+print(emoji_sentiments_dict)
+
+# Ajustar el vectorizador y obtener el vocabulario
+X_train_tfidf = tfidf_vectorizer.fit_transform(X_train)
+vocabulary = tfidf_vectorizer.get_feature_names_out()
+
+# Calcular pesos basados en los valores de emojis asociados
+weights = []
+for word in vocabulary:
+    emoji_negative = sum(float(emoji_sentiments_dict[emoji]['negative']) for emoji in word if emoji in emoji_sentiments_dict)
+    emoji_positive = sum(float(emoji_sentiments_dict[emoji]['positive']) for emoji in word if emoji in emoji_sentiments_dict)
+    weight = 1 + emoji_positive - emoji_negative
+    weights.append(weight)
+
+# Convertir los pesos a un array numpy
+weights_array = np.array(weights)
+
+# Aplicar los pesos directamente a la matriz TF-IDF
+X_train_tfidf_weighted = X_train_tfidf.multiply(weights_array)
+
+# Transformar el conjunto de prueba usando el mismo vectorizador y aplicar los pesos
+X_test_tfidf = tfidf_vectorizer.transform(X_test)
+X_test_tfidf_weighted = X_test_tfidf.multiply(weights_array)
+
+X_train_tfidf = X_train_tfidf_weighted
+X_test_tfidf = X_test_tfidf_weighted
+#
+
 #Polariadad con lexicon
 #Load lexicons
 lexicon_sel = load_sel()
 polarity_train = getSELFeatures(X_train, lexicon_sel)
 polarity_test = getSELFeatures(X_test, lexicon_sel)
-	
-
-
-# Create different text representations of the corpus (example: TF-IDF)
-tfidf_vectorizer = CountVectorizer(binary=True)
-X_train_tfidf = tfidf_vectorizer.fit_transform(X_train)
-X_test_tfidf = tfidf_vectorizer.transform(X_test)
-
-print ((X_train_tfidf))
 
 # Construir vectores de polaridad para entrenamiento
 polarity_train_vectors = np.array([[p['acumuladopositivo'], p['acumuladonegative']] for p in polarity_train])
@@ -170,7 +226,8 @@ X_test_combined = hstack([X_test_tfidf, polarity_test_vectors])
 X_train_tfidf = X_train_combined
 X_test_tfidf = X_test_combined
 
-print ((X_train_tfidf))
+
+
 
 # Split the training set into 5 folds
 kf = KFold(n_splits=5, shuffle=True, random_state=0)
@@ -179,6 +236,13 @@ kf = KFold(n_splits=5, shuffle=True, random_state=0)
 models = [
     MultinomialNB(),
     LogisticRegression(max_iter=10000),
+	MLPClassifier(hidden_layer_sizes=(100, ),
+                                     activation='tanh',
+                                     learning_rate_init=0.01,
+                                     max_iter=50,
+									 solver='adam',
+                                     validation_fraction=0.2,
+                                     )
 ]
 
 # Train different Machine Learning models and calculate average f1 macro
@@ -211,6 +275,12 @@ avg_f1_macro_test = f1_score(y_test, predictions, average='macro')
 print(f'\nAverage F1 Macro on Test Set: {avg_f1_macro_test}')
 
 
+#alerta de que ya termino
+
+import winsound
+duration = 1000  # milliseconds
+freq = 440  # Hz
+winsound.Beep(freq, duration)
 
 
 
