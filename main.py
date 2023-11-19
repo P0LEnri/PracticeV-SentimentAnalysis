@@ -36,7 +36,7 @@ Calculate the average f1 macro
 """
 import pandas as pd
 from sklearn.model_selection import train_test_split, KFold, cross_validate
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.ensemble import RandomForestClassifier
@@ -150,24 +150,27 @@ polarity_test = getSELFeatures(X_test, lexicon_sel)
 
 
 # Create different text representations of the corpus (example: TF-IDF)
-tfidf_vectorizer = TfidfVectorizer()
+tfidf_vectorizer = CountVectorizer(binary=True)
 X_train_tfidf = tfidf_vectorizer.fit_transform(X_train)
 X_test_tfidf = tfidf_vectorizer.transform(X_test)
 
+print ((X_train_tfidf))
 
 # Construir vectores de polaridad para entrenamiento
 polarity_train_vectors = np.array([[p['acumuladopositivo'], p['acumuladonegative']] for p in polarity_train])
 # Concatenar vectores de polaridad con la representación TF-IDF
-X_train_combined = hstack([X_train_tfidf, polarity_train_vectors]).toarray()
+X_train_combined = hstack([X_train_tfidf, polarity_train_vectors])
 
 # Construir vectores de polaridad para prueba
 polarity_test_vectors = np.array([[p['acumuladopositivo'], p['acumuladonegative']] for p in polarity_test])
 # Concatenar vectores de polaridad con la representación TF-IDF
-X_test_combined = hstack([X_test_tfidf, polarity_test_vectors]).toarray()
+X_test_combined = hstack([X_test_tfidf, polarity_test_vectors])
 # Ahora, X_train_combined y X_test_combined contienen tanto la representación TF-IDF como la información de polaridad.
 
 X_train_tfidf = X_train_combined
 X_test_tfidf = X_test_combined
+
+print ((X_train_tfidf))
 
 # Split the training set into 5 folds
 kf = KFold(n_splits=5, shuffle=True, random_state=0)
