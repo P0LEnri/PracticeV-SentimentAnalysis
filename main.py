@@ -37,7 +37,7 @@ Calculate the average f1 macro
 import pandas as pd
 from sklearn.model_selection import train_test_split, KFold, cross_validate
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-from sklearn.naive_bayes import MultinomialNB
+from sklearn.naive_bayes import MultinomialNB,BernoulliNB
 from sklearn.neural_network import MLPClassifier
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.ensemble import RandomForestClassifier
@@ -45,10 +45,13 @@ from sklearn.svm import SVC
 from sklearn.metrics import f1_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-import spacy
 import re
 import numpy as np
 from scipy.sparse import hstack
+from textblob import TextBlob
+from spellchecker import SpellChecker
+from gensim.models import Word2Vec
+from sklearn.preprocessing import normalize
 # Load the Rest_Mex_2022 corpus (replace 'your_data.csv' with the actual file name)
 
 
@@ -153,23 +156,121 @@ def load_emoji_sentiments(file_path):
 
 
 
+def negacion_pln(texto):
+    palabras = texto.split()
+    negaciones = set(["no", "sin", "ni", "nada", "nunca", "tampoco", "nadie", "jamas", "ninguno"])
+    nueva_lista = []
+    i = 0
+    while i < len(palabras):
+        palabra_actual = palabras[i].lower()
+        if palabra_actual in negaciones:
+            try:
+                siguiente = palabras[i+1].lower()
 
-# Lee el archivo Excel
-corpus = pd.read_excel('Rest_Mex_2022.xlsx')
+                # Asegurarse de que no haya signos de puntuación antes o después de las palabras
+                
+                nueva_lista.append(f"{palabra_actual}_{siguiente}")
+                i += 1
+            except IndexError:
+                pass
+        else:
+            nueva_lista.append(palabras[i])
+        i += 1
 
-# Create training set and test set
+    return " ".join(nueva_lista)
+
+"""# Create training set and test set
 X_train, X_test, y_train, y_test = train_test_split(
     corpus['Opinion'], corpus['Polarity'], test_size=0.2, random_state=0
+)"""
+
+
+
+import time
+start_time = time.time()
+
+
+
+
+
+
+
+
+
+
+corpus = pd.read_excel('Rest_Mex_2022_preprocesado.xlsx')
+
+# Aplica la función de negación
+#corpus['Opinion'] = corpus['Opinion'].apply(negacion_pln)
+
+# Combina las columnas 'Title' y 'Opinion' en una nueva columna llamada 'Combined'
+corpus['Combined'] = corpus['Title'].astype(str) + ' ' + corpus['Opinion'].astype(str)
+# Aplica la función de negación
+corpus['Combined'] = corpus['Combined'].apply(negacion_pln)
+# Crear conjuntos de entrenamiento y prueba
+X_train, X_test, y_train, y_test = train_test_split(
+    corpus['Combined'], corpus['Polarity'], test_size=0.2, random_state=0
 )
-print("Iniciar lexicon")
 
 # Create different text representations of the corpus (example: TF-IDF)
 
-tfidf_vectorizer = CountVectorizer(binary=True)
-#tfidf_vectorizer = TfidfVectorizer()
+"""
+vectorizador = CountVectorizer(binary=True)
+#vectorizador = TfidfVectorizer()
+X_train_vectorizado = vectorizador.fit_transform(X_train)
+X_test_vectorizado = vectorizador.transform(X_test)
+
+"""
+
+from nltk.tokenize import word_tokenize
+from gensim.utils import simple_preprocess
+print("EMBEDIGNS JEJE")
+# Tokenización simple y creación de una lista de listas de palabras
+tokenized_data = [simple_preprocess(text) for text in X_train]
+
+# Entrenar el modelo Word2Vec
+model = Word2Vec(sentences=tokenized_data, vector_size=2000, window=5, min_count=1, workers=4)
+
+# Construir el vocabulario
+model.build_vocab(tokenized_data)
+
+# Entrenar el modelo Word2Vec
+model.train(tokenized_data, total_examples=model.corpus_count, epochs=10)
+
+# Función para obtener la representación vectorial de un documento
+def get_vector_representation(document, model):
+    words = simple_preprocess(document)
+    vector = sum(model.wv[word] for word in words if word in model.wv)
+    return vector / len(vector) if len(vector) > 0 else [0] * model.vector_size
+
+# Obtener representaciones vectoriales para el conjunto de entrenamiento y prueba
+X_train_embeddings = [get_vector_representation(document, model) for document in X_train]
+X_test_embeddings = [get_vector_representation(document, model) for document in X_test]
+
+# Convertir las listas a arrays
+#X_train_embeddings = pd.DataFrame(X_train_embeddings).values
+#X_test_embeddings = pd.DataFrame(X_test_embeddings).values
+
+X_train_embeddings = np.array(X_train_embeddings)
+X_test_embeddings = np.array(X_test_embeddings)
+
+X_train_vectorizado = X_train_embeddings
+X_test_vectorizado = X_test_embeddings
+print(X_train_vectorizado)
+#imprimir tamaño de la matriz
+print(X_train_vectorizado.shape)
+
+"""X_train_vectorizado = np.nan_to_num(X_train_embeddings)
+X_train_vectorizado = np.vstack(X_train_vectorizado)
+X_test_vectorizado = np.nan_to_num(X_test_embeddings)
+X_test_vectorizado = np.vstack(X_test_vectorizado)"""
 
 
-#EMOJIS
+
+"""
+
+#EMOJIS---------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------
 
 # Ruta al archivo Excel
 xlsx_file_path = 'Recursos/Emojis lexicon.xlsx'
@@ -181,8 +282,8 @@ emoji_sentiments_dict = load_emoji_sentiments(xlsx_file_path)
 print(emoji_sentiments_dict)
 
 # Ajustar el vectorizador y obtener el vocabulario
-X_train_tfidf = tfidf_vectorizer.fit_transform(X_train)
-vocabulary = tfidf_vectorizer.get_feature_names_out()
+X_train_vectorizado = vectorizador.fit_transform(X_train)
+vocabulary = vectorizador.get_feature_names_out()
 
 # Calcular pesos basados en los valores de emojis asociados
 weights = []
@@ -196,37 +297,88 @@ for word in vocabulary:
 weights_array = np.array(weights)
 
 # Aplicar los pesos directamente a la matriz TF-IDF
-X_train_tfidf_weighted = X_train_tfidf.multiply(weights_array)
+X_train_vectorizado_weighted = X_train_vectorizado.multiply(weights_array)
 
 # Transformar el conjunto de prueba usando el mismo vectorizador y aplicar los pesos
-X_test_tfidf = tfidf_vectorizer.transform(X_test)
-X_test_tfidf_weighted = X_test_tfidf.multiply(weights_array)
+X_test_vectorizado = vectorizador.transform(X_test)
+X_test_vectorizado_weighted = X_test_vectorizado.multiply(weights_array)
 
-X_train_tfidf = X_train_tfidf_weighted
-X_test_tfidf = X_test_tfidf_weighted
+X_train_vectorizado = X_train_vectorizado_weighted
+X_test_vectorizado = X_test_vectorizado_weighted"""
+
+
+
+#---------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------
+#POLARIDAD CON BIBLIOTECA
+
+# Función para obtener la polaridad de un texto
+def obtener_polaridad(texto):
+    blob = TextBlob(texto)
+    return blob.sentiment.polarity
+
+# Agrega la polaridad a la matriz TF-IDF
+polaridades_train = X_train.apply(obtener_polaridad)
+polaridades_test = X_test.apply(obtener_polaridad)
+
+# Agrega las polaridades a la matriz TF-IDF
+#X_train_vectorizado_with_polarity = hstack((X_train_vectorizado, polaridades_train.values.reshape(-1, 1)))
+#X_test_vectorizado_with_polarity = hstack((X_test_vectorizado, polaridades_test.values.reshape(-1, 1)))
+X_train_vectorizado_with_polarity = np.concatenate([X_train_embeddings, polaridades_train.values.reshape(-1, 1)], axis=1)
+X_test_vectorizado_with_polarity = np.concatenate([X_test_embeddings, polaridades_test.values.reshape(-1, 1)], axis=1)
+#Agrega las polaridades a la matriz de embeddings
+#X_train_vectorizado_with_polarity = np.concatenate([X_train_embeddings, polaridades_train.values.reshape(-1, 1)], axis=1)
+#X_train_vectorizado_with_polarity = np.concatenate([X_test_embeddings, polaridades_test.values.reshape(-1, 1)], axis=1)
+
+
+X_train_vectorizado = X_train_vectorizado_with_polarity
+X_test_vectorizado = X_test_vectorizado_with_polarity
+
+#---------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------
+
+
 #
-
+print("Iniciar lexicon")
 #Polariadad con lexicon
 #Load lexicons
 lexicon_sel = load_sel()
 polarity_train = getSELFeatures(X_train, lexicon_sel)
 polarity_test = getSELFeatures(X_test, lexicon_sel)
 
+
+#ESTO ES CUANDO SE UTILIZA REPRESENTACION NORMAL
+
 # Construir vectores de polaridad para entrenamiento
 polarity_train_vectors = np.array([[p['acumuladopositivo'], p['acumuladonegative']] for p in polarity_train])
 # Concatenar vectores de polaridad con la representación TF-IDF
-X_train_combined = hstack([X_train_tfidf, polarity_train_vectors])
-
+print("X_train_vectorizado shape:", X_train_vectorizado.shape)
+print("polarity_train_vectors shape:", polarity_train_vectors.shape)
+#X_train_combined = hstack([X_train_vectorizado, polarity_train_vectors])
+X_train_combined = np.concatenate([X_train_vectorizado, polarity_train_vectors], axis=1)
 # Construir vectores de polaridad para prueba
 polarity_test_vectors = np.array([[p['acumuladopositivo'], p['acumuladonegative']] for p in polarity_test])
-# Concatenar vectores de polaridad con la representación TF-IDF
-X_test_combined = hstack([X_test_tfidf, polarity_test_vectors])
+print("X_test_vectorizado shape:", X_test_vectorizado.shape)
+print("polarity_test_vectors shape:", polarity_test_vectors.shape)
+# Concatenar vectores de polaridad con la representación vectorizada
+#X_test_combined = hstack([X_test_vectorizado, polarity_test_vectors])
+X_test_combined = np.concatenate([X_test_vectorizado, polarity_test_vectors], axis=1)
 # Ahora, X_train_combined y X_test_combined contienen tanto la representación TF-IDF como la información de polaridad.
 
-X_train_tfidf = X_train_combined
-X_test_tfidf = X_test_combined
+"""
+#ESTO PARA REPRESENTACION EMBEDINGS
+polarity_train_vectors = np.array([[p['acumuladopositivo'], p['acumuladonegative']] for p in polarity_train])
+polarity_test_vectors = np.array([[p['acumuladopositivo'], p['acumuladonegative']] for p in polarity_test])
 
-
+# Concatenar vectores de polaridad con la representación de embeddings
+X_train_combined = np.concatenate([X_train_embeddings, polarity_train_vectors], axis=1)
+X_test_combined = np.concatenate([X_test_embeddings, polarity_test_vectors], axis=1)
+"""
+X_train_vectorizado = X_train_combined
+X_test_vectorizado = X_test_combined
+print(X_train_vectorizado.shape)
+#---------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------
 
 
 # Split the training set into 5 folds
@@ -234,15 +386,15 @@ kf = KFold(n_splits=5, shuffle=True, random_state=0)
 
 # Define models
 models = [
-    MultinomialNB(),
-    LogisticRegression(max_iter=10000),
+    #LogisticRegression(max_iter=10000),
 	MLPClassifier(hidden_layer_sizes=(100, ),
                                      activation='tanh',
                                      learning_rate_init=0.01,
-                                     max_iter=50,
-									 solver='adam',
+                                     max_iter=1000,
+									 solver='lbfgs',
                                      validation_fraction=0.2,
-                                     )
+                                     ),
+	#SVC(kernel='sigmoid', C=1, gamma=1 ,probability=True) no jala
 ]
 
 # Train different Machine Learning models and calculate average f1 macro
@@ -252,7 +404,7 @@ best_f1_macro = 0
 for model in models:
     print("jheje")
     pipeline = make_pipeline(StandardScaler(with_mean=False), model)  # Example pipeline with StandardScaler
-    scores = cross_validate(pipeline, X_train_tfidf, y_train, cv=kf, scoring='f1_macro', return_train_score=False)
+    scores = cross_validate(pipeline, X_train_vectorizado, y_train, cv=kf, scoring='f1_macro', return_train_score=False,error_score='raise')
     avg_f1_macro = scores['test_score'].mean()
 
     print(f'{model.__class__.__name__} - Average F1 Macro: {avg_f1_macro}')
@@ -265,10 +417,10 @@ for model in models:
 print(f'\nBest Model: {best_model.__class__.__name__} with F1 Macro: {best_f1_macro}')
 
 # Train the selected model using the full train set
-best_model.fit(X_train_tfidf, y_train)
+best_model.fit(X_train_vectorizado, y_train)
 
 # Use the trained model to predict opinions of the test set
-predictions = best_model.predict(X_test_tfidf)
+predictions = best_model.predict(X_test_vectorizado)
 
 # Calculate average f1 macro
 avg_f1_macro_test = f1_score(y_test, predictions, average='macro')
@@ -282,6 +434,9 @@ duration = 1000  # milliseconds
 freq = 440  # Hz
 winsound.Beep(freq, duration)
 
+#imprimir cuanto tiempo tarda
+
+print("--- %s seconds ---" % (time.time() - start_time))
 
 
 """
@@ -303,7 +458,7 @@ for i in range(len(X_train)):
 	polaridadCadenas.append(polaridadCadena)
 
 polaridadCadenas = np.array(polaridadCadenas)
-aewa = hstack([X_train_tfidf, polaridadCadenas]).toarray()
+aewa = hstack([X_train_vectorizado, polaridadCadenas]).toarray()
 
 
 polaridadCadenas = []
@@ -314,7 +469,7 @@ for i in range(len(X_test)):
 	polaridadCadenas.append(polaridadCadena)
 
 polaridadCadenas = np.array(polaridadCadenas)
-X_test_tfidf = hstack([X_test,polaridadCadenas]).toarray()
+X_test_vectorizado = hstack([X_test,polaridadCadenas]).toarray()
 
 
 
