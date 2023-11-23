@@ -160,17 +160,20 @@ def negacion_pln(texto):
     palabras = texto.split()
     negaciones = set(["no", "sin", "ni", "nada", "nunca", "tampoco", "nadie", "jamas", "ninguno"])
     nueva_lista = []
+
     i = 0
     while i < len(palabras):
         palabra_actual = palabras[i].lower()
         if palabra_actual in negaciones:
             try:
-                siguiente = palabras[i+1].lower()
+                siguiente1 = palabras[i+1].lower()
+                siguiente2 = palabras[i+2].lower()
 
                 # Asegurarse de que no haya signos de puntuación antes o después de las palabras
                 
-                nueva_lista.append(f"{palabra_actual}_{siguiente}")
-                i += 1
+                nueva_lista.append(f"{palabra_actual}_{siguiente1}")
+                nueva_lista.append(f"{palabra_actual}_{siguiente2}")
+                i += 2
             except IndexError:
                 pass
         else:
@@ -178,7 +181,6 @@ def negacion_pln(texto):
         i += 1
 
     return " ".join(nueva_lista)
-
 """# Create training set and test set
 X_train, X_test, y_train, y_test = train_test_split(
     corpus['Opinion'], corpus['Polarity'], test_size=0.2, random_state=0
@@ -212,16 +214,22 @@ X_train, X_test, y_train, y_test = train_test_split(
     corpus['Combined'], corpus['Polarity'], test_size=0.2, random_state=0
 )
 
-# Create different text representations of the corpus (example: TF-IDF)
+# Create different text representations of the corpus
 
 """
+#---------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------
 vectorizador = CountVectorizer(binary=True)
 #vectorizador = TfidfVectorizer()
 X_train_vectorizado = vectorizador.fit_transform(X_train)
 X_test_vectorizado = vectorizador.transform(X_test)
-
+#---------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------
 """
 
+
+#EMBEDDING---------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------
 from nltk.tokenize import word_tokenize
 from gensim.utils import simple_preprocess
 print("EMBEDIGNS JEJE")
@@ -259,6 +267,11 @@ X_test_vectorizado = X_test_embeddings
 print(X_train_vectorizado)
 #imprimir tamaño de la matriz
 print(X_train_vectorizado.shape)
+
+#EMBEDDGING---------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------
+
+
 
 """X_train_vectorizado = np.nan_to_num(X_train_embeddings)
 X_train_vectorizado = np.vstack(X_train_vectorizado)
@@ -317,18 +330,17 @@ def obtener_polaridad(texto):
     blob = TextBlob(texto)
     return blob.sentiment.polarity
 
-# Agrega la polaridad a la matriz TF-IDF
+# Agrega la polaridad a la matriz 
 polaridades_train = X_train.apply(obtener_polaridad)
 polaridades_test = X_test.apply(obtener_polaridad)
 
-# Agrega las polaridades a la matriz TF-IDF
+# Agrega las polaridades a la matriz 
 #X_train_vectorizado_with_polarity = hstack((X_train_vectorizado, polaridades_train.values.reshape(-1, 1)))
 #X_test_vectorizado_with_polarity = hstack((X_test_vectorizado, polaridades_test.values.reshape(-1, 1)))
-X_train_vectorizado_with_polarity = np.concatenate([X_train_embeddings, polaridades_train.values.reshape(-1, 1)], axis=1)
-X_test_vectorizado_with_polarity = np.concatenate([X_test_embeddings, polaridades_test.values.reshape(-1, 1)], axis=1)
 #Agrega las polaridades a la matriz de embeddings
-#X_train_vectorizado_with_polarity = np.concatenate([X_train_embeddings, polaridades_train.values.reshape(-1, 1)], axis=1)
-#X_train_vectorizado_with_polarity = np.concatenate([X_test_embeddings, polaridades_test.values.reshape(-1, 1)], axis=1)
+X_train_vectorizado_with_polarity = np.concatenate([X_train_vectorizado, polaridades_train.values.reshape(-1, 1)], axis=1)
+X_test_vectorizado_with_polarity = np.concatenate([X_test_vectorizado, polaridades_test.values.reshape(-1, 1)], axis=1)
+
 
 
 X_train_vectorizado = X_train_vectorizado_with_polarity
@@ -382,12 +394,12 @@ print(X_train_vectorizado.shape)
 
 
 # Split the training set into 5 folds
-kf = KFold(n_splits=5, shuffle=True, random_state=0)
+kf = KFold(n_splits=10, shuffle=True, random_state=0)
 
 # Define models
 models = [
     #LogisticRegression(max_iter=10000),
-	MLPClassifier(hidden_layer_sizes=(100, ),
+	MLPClassifier(hidden_layer_sizes=(50, 50),
                                      activation='tanh',
                                      learning_rate_init=0.01,
                                      max_iter=1000,
@@ -425,6 +437,16 @@ predictions = best_model.predict(X_test_vectorizado)
 # Calculate average f1 macro
 avg_f1_macro_test = f1_score(y_test, predictions, average='macro')
 print(f'\nAverage F1 Macro on Test Set: {avg_f1_macro_test}')
+from sklearn.metrics import confusion_matrix,classification_report
+# Calculate and display the confusion matrix
+conf_matrix = confusion_matrix(y_test, predictions)
+print("\nConfusion Matrix:")
+print(conf_matrix)
+
+# Display a classification report
+class_report = classification_report(y_test, predictions)
+print("\nClassification Report:")
+print(class_report)
 
 
 #alerta de que ya termino
